@@ -1,0 +1,153 @@
+# AMD GPU Vehicle Speed Estimation - Configuration
+# Optimized for AMD Radeon GPUs with DirectML
+
+# ============================================================
+# DEVICE CONFIGURATION
+# ============================================================
+device:
+  type: 'dml'              # 'dml' for AMD GPU, 'cuda' for NVIDIA, 'cpu' for CPU
+  device_id: 0             # GPU index (0 for first GPU)
+  batch_size: 8            # Batch size for inference (increase for powerful GPU)
+  half_precision: true     # Use FP16 for 2x faster inference (recommended)
+  warmup: true             # Warm up GPU before processing
+
+# ============================================================
+# MODEL CONFIGURATION
+# ============================================================
+model:
+  name: 'yolov8n'         # Model: 'yolov8n', 'yolov8s', 'yolov11n', 'yolov11s'
+  weights: 'yolov8n.pt'   # Path to weights (auto-download if not exists)
+  confidence: 0.4         # Detection confidence threshold (0.0 - 1.0)
+  iou_threshold: 0.5      # IoU threshold for NMS
+  image_size: 640         # Input image size (640, 1280, etc.)
+  
+  # Vehicle classes to detect (COCO dataset IDs)
+  classes:
+    - 2    # car
+    - 3    # motorcycle  
+    - 5    # bus
+    - 7    # truck
+
+# ============================================================
+# TRACKING CONFIGURATION
+# ============================================================
+tracking:
+  method: 'bytetrack'     # Tracking algorithm
+  max_age: 30             # Max frames to keep lost tracks
+  min_hits: 3             # Min detections before confirmed
+  iou_threshold: 0.3      # IoU threshold for matching
+  track_buffer: 30        # Buffer time for lost tracks
+
+# ============================================================
+# SPEED ESTIMATION
+# ============================================================
+speed:
+  calibration_file: 'config/calibration.yaml'  # Camera calibration
+  min_track_length: 10    # Min frames to calculate speed
+  smoothing_window: 5     # Moving average window
+  speed_limit: 100        # Speed limit (km/h) for violations
+  
+  # Road type presets
+  road_type: 'urban'      # 'highway', 'urban', 'residential'
+  
+  road_limits:
+    highway: 100          # km/h
+    urban: 60             # km/h
+    residential: 30       # km/h
+
+# ============================================================
+# VIDEO PROCESSING
+# ============================================================
+video:
+  input_path: 'data/test_video.mp4'
+  output_path: 'output/videos/output.mp4'
+  
+  # Frame processing
+  skip_frames: 0  # Process every Nth frame (0 = process all frames)
+  resize_width: 1920      # Resize input (null = original size)
+  resize_height: null     # Auto maintain aspect ratio
+  
+  # Output video
+  fps: 60                 # Output FPS (null = same as input)
+  codec: 'mp4v'           # Video codec ('mp4v', 'avc1', 'XVID')
+  quality: 100             # Output quality (0-100)
+
+# ============================================================
+# VISUALIZATION
+# ============================================================
+visualization:
+  show_realtime: false    # Display video while processing
+  show_boxes: true        # Draw bounding boxes
+  show_labels: true       # Show class labels
+  show_confidence: true   # Show confidence scores
+  show_speed: true        # Show speed values
+  show_track_id: true     # Show tracking IDs
+  show_trajectory: true   # Draw vehicle trajectories
+  
+  # Colors (BGR format)
+  colors:
+    normal: [0, 255, 0]      # Green for normal speed
+    violation: [0, 0, 255]   # Red for speeding
+    track: [255, 0, 255]     # Magenta for trajectories
+  
+  # Text settings
+  font_scale: 0.6
+  font_thickness: 2
+  trajectory_length: 30   # Max trajectory points
+  
+  # Statistics overlay
+  show_stats: true        # Show real-time statistics
+  stats_position: 'top_left'  # 'top_left', 'top_right', 'bottom_left', 'bottom_right'
+
+# ============================================================
+# OUTPUT & EXPORT
+# ============================================================
+output:
+  save_video: true        # Save annotated video
+  save_data: true         # Save detection data
+  save_stats: true        # Save statistics
+  
+  # Data export formats
+  export_csv: true        # CSV format
+  export_json: true       # JSON format
+  
+  # Paths
+  video_dir: 'output/videos'
+  data_dir: 'output/data'
+  
+  # Data to include
+  include_timestamps: true
+  include_coordinates: true
+  include_speeds: true
+  include_violations: true
+
+# ============================================================
+# LOGGING
+# ============================================================
+logging:
+  level: 'INFO'           # 'DEBUG', 'INFO', 'WARNING', 'ERROR'
+  console: true           # Log to console
+  file: true              # Log to file
+  log_dir: 'logs'
+  log_file: 'detection.log'
+  colored: true           # Colored console output
+  rotation: '10 MB'       # Log rotation size
+  retention: '7 days'     # Log retention period
+
+# ============================================================
+# PERFORMANCE
+# ============================================================
+performance:
+  enable_profiling: false  # Enable performance profiling
+  benchmark_mode: false    # Benchmark mode (no visualization)
+  max_workers: 4           # Thread pool size
+  prefetch_frames: 10      # Number of frames to prefetch
+
+# ============================================================
+# DEBUGGING
+# ============================================================
+debug:
+  save_debug_frames: false  # Save frames for debugging
+  debug_dir: 'output/debug'
+  frame_interval: 100       # Save every Nth frame
+  verbose: false            # Verbose output
