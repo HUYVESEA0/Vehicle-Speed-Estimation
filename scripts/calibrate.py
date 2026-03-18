@@ -25,13 +25,20 @@ window_name = "Camera Calibration"
 def mouse_callback(event, x, y, flags, param):
     """Mouse callback for selecting points"""
     global points, frame
-    
+
     if event == cv2.EVENT_LBUTTONDOWN:
         if len(points) < 4:
             points.append((x, y))
             print(f"Point {len(points)}: ({x}, {y})")
-            
-            # Draw point (on a copy, handled in main loop)
+        else:
+            print("Already have 4 points. Press 'r' to reset.")
+    elif event == cv2.EVENT_RBUTTONDOWN:
+        # Right click to remove last point
+        if points:
+            removed = points.pop()
+            print(f"Removed point: {removed}")
+        else:
+            print("No points to remove.")
 
 
 def parse_args():
@@ -69,11 +76,18 @@ def main():
     logger.info("=" * 70)
     logger.info("")
     logger.info("Instructions:")
-    logger.info("  1. Click 4 corners of the measurement area (rectangle)")
+    logger.info("  1. Click 4 corners of the measurement area to form a rectangle")
     logger.info("  2. Click in order: top-left, top-right, bottom-right, bottom-left")
-    logger.info("  3. Press 's' to save calibration")
-    logger.info("  4. Press 'r' to reset points")
-    logger.info("  5. Press 'q' to quit without saving")
+    logger.info("  3. Left click: Add point")
+    logger.info("  4. Right click: Remove last point")
+    logger.info("  5. Press 's' to save calibration (will ask for real dimensions)")
+    logger.info("  6. Press 'r' to reset all points")
+    logger.info("  7. Press 'q' to quit without saving")
+    logger.info("")
+    logger.info("Tips:")
+    logger.info("  • Select a rectangular area where vehicles will be measured")
+    logger.info("  • Choose points that form a clear perspective view")
+    logger.info("  • Avoid points too close to image edges")
     logger.info("")
     
     # Open video using StreamLoader
@@ -128,50 +142,76 @@ def main():
             if len(points) != 4:
                 logger.warning(f"Need 4 points, only have {len(points)}")
                 continue
-            
+
             # Get real-world dimensions
             logger.info("\nEnter real-world dimensions:")
             try:
                 width_m = float(input("  Width (meters): "))
                 height_m = float(input("  Height (meters): "))
+
+                # Validate dimensions
+                if width_m <= 0 or height_m <= 0:
+                    logger.error("Dimensions must be positive")
+                    continue
+
+                # Check if points form a valid quadrilateral
+                points_array = np.array(points)
+                if len(np.unique(points_array, axis=0)) != 4:
+                    logger.error("Points must be unique")
+                    continue
+
             except ValueError:
-                logger.error("Invalid input")
+                logger.error("Invalid input - please enter numbers only")
                 continue
-            
-            # Calculate perspective transform
-            src_points = np.float32(points)
-            dst_points = np.float32([
-                [0, 0],
-                [width_m * 100, 0],
-                [width_m * 100, height_m * 100],
-                [0, height_m * 100]
-            ])
-            
-            matrix = cv2.getPerspectiveTransform(src_points, dst_points)
-            pixels_per_meter = 100  # We scale to 100 pixels per meter
-            
-            # Save calibration
-            calibration = {
-                'points': [[float(p[0]), float(p[1])] for p in points],
-                'width_meters': float(width_m),
-                'height_meters': float(height_m),
-                'transform_matrix': matrix.tolist(),
-                'pixels_per_meter': pixels_per_meter,
-                'frame_width': frame.shape[1],
-                'frame_height': frame.shape[0]
-            }
-            
-            output_path = Path(args.output)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            with open(output_path, 'w') as f:
-                yaml.dump(calibration, f, default_flow_style=False)
-            
-            logger.info(f"\n✓ Calibration saved to: {output_path}")
-            logger.info(f"  Area: {width_m:.2f}m x {height_m:.2f}m")
-            logger.info(f"  Pixels per meter: {pixels_per_meter}")
-            
-            break
+            except KeyboardInterrupt:
+                logger.info("Calibration cancelled by user")
+                break
+
+            try:
+                # Calculate perspective transform
+                src_points = np.float32(points)
+                dst_points = np.float32([
+                    [0, 0],
+                    [width_m * 100, 0],
+                    [width_m * 100, height_m * 100],
+                    [0, height_m * 100]
+                ])
+
+                matrix = cv2.getPerspectiveTransform(src_points, dst_points)
+
+                # Validate matrix
+                if matrix is None:
+                    logger.error("Cannot compute perspective transform - check point selection")
+                    continue
+
+                pixels_per_meter = 100  # We scale to 100 pixels per meter
+
+                # Save calibration
+                calibration = {
+                    'points': [[float(p[0]), float(p[1])] for p in points],
+                    'width_meters': float(width_m),
+                    'height_meters': float(height_m),
+                    'transform_matrix': matrix.tolist(),
+                    'pixels_per_meter': pixels_per_meter,
+                    'frame_width': frame.shape[1],
+                    'frame_height': frame.shape[0]
+                }
+
+                output_path = Path(args.output)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+
+                with open(output_path, 'w') as f:
+                    yaml.dump(calibration, f, default_flow_style=False)
+
+                logger.info(f"\n✓ Calibration saved to: {output_path}")
+                logger.info(f"  Area: {width_m:.2f}m x {height_m:.2f}m")
+                logger.info(f"  Pixels per meter: {pixels_per_meter}")
+
+                break
+
+            except Exception as e:
+                logger.error(f"Error saving calibration: {e}")
+                logger.info("Please try again or check point selection")
         
         # Quit
         elif key == ord('q'):

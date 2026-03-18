@@ -204,27 +204,43 @@ elif page == "Hiệu chỉnh":
         if st.button("📸 Chụp khung hình"):
             try:
                 with st.spinner("Đang chụp khung hình..."):
+                    # Validate input source
+                    if not input_source or input_source.strip() == "":
+                        st.error("❌ Vui lòng nhập URL hoặc đường dẫn video!")
+                        st.stop()
+
                     cap = StreamLoader(input_source)
+
                     # Read a few frames to settle (reduced to 5)
-                    for _ in range(5): 
+                    frame = None
+                    for i in range(10):  # Try up to 10 frames
                         ret, frame = cap.read()
-                        if not ret: break
-                    
-                    if ret and frame is not None:
-                        # Resize to 480p consistent with processing
-                        if frame.shape[0] > 480:
-                            scale = 480 / frame.shape[0]
-                            w = int(frame.shape[1] * scale)
-                            frame = cv2.resize(frame, (w, 480))
-                        
-                        st.session_state.calib_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        st.rerun()
-                    else:
-                        st.error("Không thể chụp khung hình. Kiểm tra URL/Nguồn.")
-                        
+                        if ret and frame is not None:
+                            break
+                        elif i == 9:  # Last attempt
+                            st.error("❌ Không thể đọc frame từ nguồn video!")
+                            st.stop()
+
+                    # Validate frame
+                    if frame is None or frame.size == 0:
+                        st.error("❌ Frame trống hoặc không hợp lệ!")
+                        st.stop()
+
+                    # Resize to 480p consistent with processing
+                    original_height = frame.shape[0]
+                    if original_height > 480:
+                        scale = 480 / original_height
+                        w = int(frame.shape[1] * scale)
+                        frame = cv2.resize(frame, (w, 480))
+
+                    st.session_state.calib_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    st.success("✅ Đã chụp khung hình thành công!")
+                    st.rerun()
+
                     cap.release()
             except Exception as e:
-                st.error(f"Lỗi chụp khung hình: {e}")
+                st.error(f"❌ Lỗi chụp khung hình: {str(e)}")
+                st.info("💡 Kiểm tra lại URL/đường dẫn video và thử lại.")
 
         real_w = st.number_input("Chiều rộng thực (m)", value=10.0)
         real_h = st.number_input("Chiều cao thực (m)", value=30.0)
@@ -259,34 +275,73 @@ elif page == "Hiệu chỉnh":
         if canvas_result.json_data is not None:
             objects = canvas_result.json_data["objects"]
             points = [[obj["left"], obj["top"]] for obj in objects]
-            
-            st.write(f"Điểm đã chọn: {len(points)}")
-            
+
+            st.write(f"Điểm đã chọn: {len(points)}/4")
+
             if len(points) == 4:
-                if st.button("💾 Lưu hiệu chỉnh"):
-                    # Calculate Matrix
-                    src_points = np.float32(points)
-                    dst_points = np.float32([
-                        [0, 0],
-                        [real_w * 100, 0],
-                        [real_w * 100, real_h * 100],
-                        [0, real_h * 100]
-                    ])
-                    matrix = cv2.getPerspectiveTransform(src_points, dst_points)
-                    
-                    calibration = {
-                        'points': points,
-                        'width_meters': float(real_w),
-                        'height_meters': float(real_h),
-                        'transform_matrix': matrix.tolist(),
-                        'pixels_per_meter': 100,
-                        'frame_width': display_frame.shape[1],
-                        'frame_height': display_frame.shape[0]
-                    }
-                    
-                    with open("config/calibration.yaml", 'w') as f:
-                        yaml.dump(calibration, f)
-                    st.success("Đã lưu hiệu chỉnh! Vui lòng chuyển sang chế độ Giám sát.")
+                try:
+                    # Validate points - check if they form a valid quadrilateral
+                    points_array = np.array(points, dtype=np.float32)
+
+                    # Check if points are not all collinear
+                    if len(np.unique(points_array, axis=0)) != 4:
+                        st.warning("⚠️ Vui lòng chọn 4 điểm khác nhau!")
+                    else:
+                        st.info("✅ 4 điểm đã được chọn. Bấm 'Lưu hiệu chỉnh' để hoàn tất.")
+
+                        if st.button("💾 Lưu hiệu chỉnh"):
+                            try:
+                                # Validate input dimensions
+                                if real_w <= 0 or real_h <= 0:
+                                    st.error("❌ Kích thước thực phải lớn hơn 0!")
+                                    st.stop()
+
+                                # Calculate Matrix with error handling
+                                src_points = np.float32(points)
+                                dst_points = np.float32([
+                                    [0, 0],
+                                    [real_w * 100, 0],
+                                    [real_w * 100, real_h * 100],
+                                    [0, real_h * 100]
+                                ])
+
+                                # Check if perspective transform is possible
+                                matrix = cv2.getPerspectiveTransform(src_points, dst_points)
+
+                                # Validate transformation matrix
+                                if matrix is None:
+                                    st.error("❌ Không thể tạo ma trận biến đổi! Vui lòng chọn lại 4 điểm.")
+                                    st.stop()
+
+                                calibration = {
+                                    'points': points,
+                                    'width_meters': float(real_w),
+                                    'height_meters': float(real_h),
+                                    'transform_matrix': matrix.tolist(),
+                                    'pixels_per_meter': 100,
+                                    'frame_width': display_frame.shape[1],
+                                    'frame_height': display_frame.shape[0]
+                                }
+
+                                # Ensure config directory exists
+                                Path("config").mkdir(exist_ok=True)
+
+                                with open("config/calibration.yaml", 'w') as f:
+                                    yaml.dump(calibration, f, default_flow_style=False)
+
+                                st.success("✅ Đã lưu hiệu chỉnh thành công! Vui lòng chuyển sang chế độ Giám sát.")
+                                st.info(f"📏 Khu vực: {real_w}m × {real_h}m | Tỷ lệ: 100 pixels/meter")
+
+                            except Exception as e:
+                                st.error(f"❌ Lỗi khi lưu hiệu chỉnh: {str(e)}")
+                                st.info("💡 Hãy thử chọn lại 4 điểm tạo thành hình chữ nhật rõ ràng.")
+
+                except Exception as e:
+                    st.error(f"❌ Lỗi xử lý điểm: {str(e)}")
+            elif len(points) > 0:
+                st.info(f"📍 Cần chọn thêm {4-len(points)} điểm nữa để tạo vùng hiệu chỉnh.")
+            else:
+                st.info("📍 Bấm vào 4 góc của khu vực đo tốc độ trên hình ảnh.")
 
 
 # --- MONITOR PAGE ---

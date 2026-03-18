@@ -103,6 +103,11 @@ class VehicleDetector:
         Returns: (processed_image, ratio, (pad_w, pad_h))
         """
         shape = frame.shape[:2]  # current shape [height, width]
+
+        # Safety check to prevent division by zero
+        if shape[0] <= 0 or shape[1] <= 0:
+            raise ValueError(f"Invalid frame dimensions: {shape}. Frame must have positive height and width.")
+
         new_shape = (self.image_size, self.image_size)
 
         # Scale ratio (new / old)
@@ -185,7 +190,13 @@ class VehicleDetector:
             xyxy[:, 1] -= pad_h
             xyxy[:, 2] -= pad_w
             xyxy[:, 3] -= pad_h
-            xyxy[:, :4] /= ratio
+
+            # Safety check to prevent division by zero
+            if ratio > 0:
+                xyxy[:, :4] /= ratio
+            else:
+                # If ratio is 0 or negative, keep original coordinates
+                pass
             
             # Clip boxes to image bounds
             h, w = frame.shape[:2]
